@@ -84,10 +84,10 @@ class Simulation(object):
                 x_cord, y_cord = traci.vehicle.getPosition(allCarId)
                 g_lng, g_lat = traci.simulation.convertGeo(x_cord, y_cord)
 
-				# log to kafka
+                # log to kafka
                 msgWaitTime = str(allCarId) + "," + str(w_time) + "," + str(g_lat) + "," + str(g_lng)
                 RTXForword.publish(msgWaitTime, Config.kafkaTopicNis)
-				# log to file Dragan
+                # log to file Dragan
                 #CSVLogger.logEvent("wait", [allCarId, cls.tick, g_lat, g_lng])
                 if w_time >= 59.0:
                     traci.vehicle.setColor(allCarId, (0, 0, 255, 0))
