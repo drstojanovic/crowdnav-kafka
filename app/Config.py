@@ -15,7 +15,7 @@ mqttPort = "1883"
 kafkaTopicTrips = "crowd-nav-trips"
 kafkaTopicPerformance = "crowd-nav-performance"
 kafkaTopicRouting = "crowd-nav-routing"
-kafkaTopicNis = "nis-waittime"
+kafkaTopicNis = "traffic"
 
 # where we receive system changes
 kafkaCommandsTopic = "crowd-nav-commands"
@@ -33,7 +33,7 @@ sumoNet = "./app/map/map.net.xml"
 initialWaitTicks = 200
 
 # the total number of cars we use in our simulation
-totalCarCounter = 650
+totalCarCounter = 1000
 
 # percentage of cars that are smart
 smartCarPercentage = 0.2

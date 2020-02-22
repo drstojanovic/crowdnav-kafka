@@ -29,13 +29,14 @@ def publish(message,topic):
             publish.single(topic, payload=json.dumps(message).encode('utf-8'),
                        qos=0, retain=False, hostname=Config.mqttHost,
                        port=Config.mqttPort, client_id="CrowdNav", keepalive=60)
-        except:
-            print("Error sending mqtt status")
+        except Exception as e:
+            print("Error sending mqtt status: " + str(e))
+
     if Config.kafkaUpdates:
         try:
             producer.send(topic, message)
-        except:
-            print("Error sending kafka status")
+        except Exception as e:
+            print("Error sending kafka status: " + str(e))
     else:
         # we ignore this in json mode
         pass

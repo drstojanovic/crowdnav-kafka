@@ -8,8 +8,11 @@ services:
     ports:
       - "2181:2181"
       - "9092:9092"
+    environment:
+      - ADVERTISED_HOST=172.18.0.2
     networks:
-      - crowdnav_network
+      crowdnav_network:
+        ipv4_address: 172.18.0.2
 
   crowdnav:
     build: .
@@ -22,3 +25,7 @@ services:
 
 networks:
   crowdnav_network:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.18.0.2/16

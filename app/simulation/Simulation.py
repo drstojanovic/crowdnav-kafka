@@ -3,6 +3,8 @@ import traci
 import traci.constants as tc
 from app.network.Network import Network
 
+import sumolib
+
 from app.streaming import RTXForword
 from colorama import Fore
 
@@ -13,6 +15,7 @@ from app.logging import info
 from app.routing.CustomRouter import CustomRouter
 from app.streaming import RTXConnector
 import time
+import json
 
 # get the current system time
 from app.routing.RoutingEdge import RoutingEdge
@@ -60,48 +63,105 @@ class Simulation(object):
         # start listening to all cars that arrived at their target
         traci.simulation.subscribe((tc.VAR_ARRIVED_VEHICLES_IDS,))
         # traci.vehicle.subscribe((tc.VAR_WAITING_TIME,))
-    
+
+        # Create a file with junction -> inc_lanes mapping
+        net = sumolib.net.readNet(Config.sumoNet)
+        junction_ids = traci.junction.getIDList()
+        junctions = {}
+        for junction_id in junction_ids:
+            pos_x, pos_y = traci.junction.getPosition(junction_id)
+            lon, lat = traci.simulation.convertGeo(pos_x, pos_y)
+            junction_type = net.getNode(junction_id).getType()
+            inc_edges = [edge.getID() for edge in net.getNode(junction_id).getIncoming()]
+            inc_lanes_per_edge = [net.getEdge(edge_id).getLanes() for edge_id in inc_edges]
+            inc_lane_ids = [lane.getID() for lanes in inc_lanes_per_edge for lane in lanes]
+            junctions[junction_id] = {
+                'id': junction_id,
+                'type': junction_type,
+                'lat': lat,
+                'lon': lon,
+                'inc_lanes': inc_lane_ids
+            }
+
+        lane_ids = traci.lane.getIDList()
+        lanes = {}
+        for lane_id in lane_ids:
+            outgoing_conns = net.getLane(lane_id).getOutgoing()
+            lanes[lane_id] = {
+                'length': round(traci.lane.getLength(lane_id), 1),
+                'max_speed': round(traci.lane.getMaxSpeed(lane_id) * 3.6),
+                'next_junction': [junc_id for junc_id, junc in junctions.items() if lane_id in junc['inc_lanes']][0]
+            }
+            if junctions[lanes[lane_id]['next_junction']]['type'] == 'traffic_light':
+                lanes[lane_id]['tl_id'] = outgoing_conns[0].getTLSID()
+                lanes[lane_id]['tl_link_indexes'] = [conn.getTLLinkIndex() for conn in outgoing_conns]
+
+        with open('/tmp/junctions.json', 'w') as file:
+            file.write(json.dumps(junctions))
+
+        with open('/tmp/lanes.json', 'w') as file:
+            file.write(json.dumps(lanes))
+
         while 1:
             # Do one simulation step
             cls.tick += 1
             traci.simulationStep()
 
             # Log tick duration to kafka
-            duration = current_milli_time() - cls.lastTick
-            cls.lastTick = current_milli_time()
+            current_millis = current_milli_time()
+            duration = current_millis - cls.lastTick
+            cls.lastTick = current_millis
             msg = dict()
             msg["duration"] = duration
             RTXForword.publish(msg, Config.kafkaTopicPerformance)
 
+            current_secs = current_millis / 1000.0
+
             # Check for removed cars and re-add them into the system
             for removedCarId in traci.simulation.getSubscriptionResults()[122]:
                 CarRegistry.findById(removedCarId).setArrived(cls.tick)
-            
+
             for allCarId in traci.vehicle.getIDList():
-                w_time = traci.vehicle.getWaitingTime(allCarId)
-                #if c > 60.0:
-                # w_time = c
-                x_cord, y_cord = traci.vehicle.getPosition(allCarId)
-                g_lng, g_lat = traci.simulation.convertGeo(x_cord, y_cord)
+                # w_time = traci.vehicle.getWaitingTime(allCarId)
+                # x_cord, y_cord = traci.vehicle.getPosition(allCarId)
+                # g_lng, g_lat = traci.simulation.convertGeo(x_cord, y_cord)
+                pos_x, pos_y = traci.vehicle.getPosition(allCarId)
+
+                road_id = traci.vehicle.getRoadID(allCarId)
+                lane_id = traci.vehicle.getLaneID(allCarId)
+                speed = traci.vehicle.getSpeed(allCarId)
+                lon, lat = traci.simulation.convertGeo(pos_x, pos_y)
+                wait_time = traci.vehicle.getWaitingTime(allCarId)
 
                 # log to kafka
-                msgWaitTime = str(allCarId) + "," + str(w_time) + "," + str(g_lat) + "," + str(g_lng)
-                RTXForword.publish(msgWaitTime, Config.kafkaTopicNis)
-                # log to file Dragan
-                #CSVLogger.logEvent("wait", [allCarId, cls.tick, g_lat, g_lng])
-                if w_time >= 59.0:
-                    traci.vehicle.setColor(allCarId, (0, 0, 255, 0))
-                    print(msgWaitTime)
-                #    CSVLogger.logEvent("wait", [allCarId, w_time, g_lat, g_lng])
-                # print("Car id: " + str(allCarId) + " Time: " + str(w_time) + " Position: (" + str(g_lat) + "," + str(g_lng) + ")")
+                # msgWaitTime = str(allCarId) + "," + str(w_time) + "," + str(g_lat) + "," + str(g_lng)
+                # RTXForword.publish(msgWaitTime, Config.kafkaTopicNis)
+                message = {
+                    'car_id': allCarId,
+                    'road_id': road_id,
+                    'lane_id': lane_id,
+                    'speed': speed,
+                    'lon': lon,
+                    'lat': lat,
+                    'wait_time':  wait_time,
+                    'timestamp': current_secs
+                }
+                RTXForword.publish(message, Config.kafkaTopicNis)
 
-            timeBeforeCarProcess = current_milli_time()
+                # log to file Dragan
+                # CSVLogger.logEvent("wait", [allCarId, cls.tick, g_lat, g_lng])
+
+                # if w_time >= 59.0:
+                #     traci.vehicle.setColor(allCarId, (0, 0, 255, 0))
+                #     print(msgWaitTime)
+
+            # timeBeforeCarProcess = current_milli_time()
             # let the cars process this step
             CarRegistry.processTick(cls.tick)
             # log time it takes for routing
-            #msg = dict()
-            #msg["duration"] = current_milli_time() - timeBeforeCarProcess
-            #RTXForword.publish(msg, Config.kafkaTopicRouting)
+            # msg = dict()
+            # msg["duration"] = current_milli_time() - timeBeforeCarProcess
+            # RTXForword.publish(msg, Config.kafkaTopicRouting)
 
             # if we enable this we get debug information in the sumo-gui using global traveltime
             # should not be used for normal running, just for debugging
