@@ -8,7 +8,7 @@ from app.logging import info
 from app.routing.CustomRouter import CustomRouter
 from app.network.Network import Network
 from app.simulation.Simulation import Simulation
-from streaming import RTXForword
+from streaming import RTXForword, RTXUpdater
 from colorama import Fore
 from sumo import SUMOConnector, SUMODependency
 import Config
@@ -36,6 +36,7 @@ def start(processID, parallelMode,useGUI):
     if Config.kafkaUpdates or Config.mqttUpdates:
         RTXForword.connect()
         RTXConnector.connect()
+        RTXUpdater.connect()
 
     # Check if sumo is installed and available
     SUMODependency.checkDeps()

@@ -1,24 +1,21 @@
 import json
-import traci
-import traci.constants as tc
-from app.network.Network import Network
+import time
 
 import sumolib
-
-from app.streaming import RTXForword
+import traci
+import traci.constants as tc
 from colorama import Fore
 
 from app import Config
-from app.logging import CSVLogger
 from app.entitiy.CarRegistry import CarRegistry
 from app.logging import info
 from app.routing.CustomRouter import CustomRouter
-from app.streaming import RTXConnector
-import time
-import json
-
 # get the current system time
 from app.routing.RoutingEdge import RoutingEdge
+from app.streaming import RTXConnector
+from app.streaming import RTXForword, RTXUpdater
+from app.tl_control.tl_controller import TLController
+
 
 current_milli_time = lambda: int(round(time.time() * 1000))
 
@@ -53,19 +50,13 @@ class Simulation(object):
         # apply the configuration from the json file
         cls.applyFileConfig()
         CarRegistry.applyCarCounter()
+        cls.generate_map_files()
         cls.loop()
 
     @classmethod
-    # @profile
-    def loop(cls):
-        """ loops the simulation """
-
-        # start listening to all cars that arrived at their target
-        traci.simulation.subscribe((tc.VAR_ARRIVED_VEHICLES_IDS,))
-        # traci.vehicle.subscribe((tc.VAR_WAITING_TIME,))
-
+    def generate_map_files(cls):
         # Create a file with junction -> inc_lanes mapping
-        net = sumolib.net.readNet(Config.sumoNet)
+        net = sumolib.net.readNet(Config.sumoNet, withLatestPrograms=True)
         junction_ids = traci.junction.getIDList()
         junctions = {}
         for junction_id in junction_ids:
@@ -86,21 +77,40 @@ class Simulation(object):
         lane_ids = traci.lane.getIDList()
         lanes = {}
         for lane_id in lane_ids:
-            outgoing_conns = net.getLane(lane_id).getOutgoing()
             lanes[lane_id] = {
                 'length': round(traci.lane.getLength(lane_id), 1),
                 'max_speed': round(traci.lane.getMaxSpeed(lane_id) * 3.6),
                 'next_junction': [junc_id for junc_id, junc in junctions.items() if lane_id in junc['inc_lanes']][0]
             }
+            outgoing_conns = net.getLane(lane_id).getOutgoing()
             if junctions[lanes[lane_id]['next_junction']]['type'] == 'traffic_light':
-                lanes[lane_id]['tl_id'] = outgoing_conns[0].getTLSID()
-                lanes[lane_id]['tl_link_indexes'] = [conn.getTLLinkIndex() for conn in outgoing_conns]
+                tl_id = outgoing_conns[0].getTLSID()
+                tl_program = net.getTLSSecure(tl_id).getPrograms()['0']
+                tl_phases = [p[0] for p in tl_program.getPhases()]
+                tl_link_indexes = [conn.getTLLinkIndex() for conn in outgoing_conns]
+                green_phases = []
+                for i, phase in enumerate(tl_phases):
+                    if any(phase[link_idx].lower() == 'g' for link_idx in tl_link_indexes):
+                        green_phases.append(i)
+                lanes[lane_id]['tl_id'] = tl_id
+                lanes[lane_id]['green_phases'] = green_phases
 
         with open('/tmp/junctions.json', 'w') as file:
             file.write(json.dumps(junctions))
 
         with open('/tmp/lanes.json', 'w') as file:
             file.write(json.dumps(lanes))
+
+    @classmethod
+    # @profile
+    def loop(cls):
+        """ loops the simulation """
+
+        # start listening to all cars that arrived at their target
+        traci.simulation.subscribe((tc.VAR_ARRIVED_VEHICLES_IDS,))
+        # traci.vehicle.subscribe((tc.VAR_WAITING_TIME,))
+
+        tl_controller = TLController()
 
         while 1:
             # Do one simulation step
@@ -121,23 +131,17 @@ class Simulation(object):
             for removedCarId in traci.simulation.getSubscriptionResults()[122]:
                 CarRegistry.findById(removedCarId).setArrived(cls.tick)
 
-            for allCarId in traci.vehicle.getIDList():
-                # w_time = traci.vehicle.getWaitingTime(allCarId)
-                # x_cord, y_cord = traci.vehicle.getPosition(allCarId)
-                # g_lng, g_lat = traci.simulation.convertGeo(x_cord, y_cord)
-                pos_x, pos_y = traci.vehicle.getPosition(allCarId)
+            for car_id in traci.vehicle.getIDList():
+                pos_x, pos_y = traci.vehicle.getPosition(car_id)
 
-                road_id = traci.vehicle.getRoadID(allCarId)
-                lane_id = traci.vehicle.getLaneID(allCarId)
-                speed = traci.vehicle.getSpeed(allCarId)
+                road_id = traci.vehicle.getRoadID(car_id)
+                lane_id = traci.vehicle.getLaneID(car_id)
+                speed = traci.vehicle.getSpeed(car_id)
                 lon, lat = traci.simulation.convertGeo(pos_x, pos_y)
-                wait_time = traci.vehicle.getWaitingTime(allCarId)
+                wait_time = traci.vehicle.getWaitingTime(car_id)
 
-                # log to kafka
-                # msgWaitTime = str(allCarId) + "," + str(w_time) + "," + str(g_lat) + "," + str(g_lng)
-                # RTXForword.publish(msgWaitTime, Config.kafkaTopicNis)
                 message = {
-                    'car_id': allCarId,
+                    'car_id': car_id,
                     'road_id': road_id,
                     'lane_id': lane_id,
                     'speed': speed,
@@ -148,20 +152,12 @@ class Simulation(object):
                 }
                 RTXForword.publish(message, Config.kafkaTopicNis)
 
-                # log to file Dragan
-                # CSVLogger.logEvent("wait", [allCarId, cls.tick, g_lat, g_lng])
-
-                # if w_time >= 59.0:
-                #     traci.vehicle.setColor(allCarId, (0, 0, 255, 0))
-                #     print(msgWaitTime)
-
             # timeBeforeCarProcess = current_milli_time()
             # let the cars process this step
             CarRegistry.processTick(cls.tick)
-            # log time it takes for routing
-            # msg = dict()
-            # msg["duration"] = current_milli_time() - timeBeforeCarProcess
-            # RTXForword.publish(msg, Config.kafkaTopicRouting)
+
+            new_tls_actions = RTXUpdater.read_new_tls_actions()
+            tl_controller.update_tls(new_tls_actions)
 
             # if we enable this we get debug information in the sumo-gui using global traveltime
             # should not be used for normal running, just for debugging
@@ -172,51 +168,51 @@ class Simulation(object):
             # 3)     traci.edge.adaptTraveltime(e.id, (cls.tick-e.lastDurationUpdateTick)) # how old the data is
 
             # real time update of config if we are not in kafka mode
-            if (cls.tick % 10) == 0:
-                if Config.kafkaUpdates is False and Config.mqttUpdates is False:
-                    # json mode
-                    cls.applyFileConfig()
-                else:
-                    # kafka mode
-                    newConf = RTXConnector.checkForNewConfiguration()
-                    if newConf is not None:
-                        if "exploration_percentage" in newConf:
-                            CustomRouter.explorationPercentage = newConf["exploration_percentage"]
-                            print("setting victimsPercentage: " + str(newConf["exploration_percentage"]))
-                        if "route_random_sigma" in newConf:
-                            CustomRouter.routeRandomSigma = newConf["route_random_sigma"]
-                            print("setting routeRandomSigma: " + str(newConf["route_random_sigma"]))
-                        if "max_speed_and_length_factor" in newConf:
-                            CustomRouter.maxSpeedAndLengthFactor = newConf["max_speed_and_length_factor"]
-                            print("setting maxSpeedAndLengthFactor: " + str(newConf["max_speed_and_length_factor"]))
-                        if "average_edge_duration_factor" in newConf:
-                            CustomRouter.averageEdgeDurationFactor = newConf["average_edge_duration_factor"]
-                            print("setting averageEdgeDurationFactor: " + str(newConf["average_edge_duration_factor"]))
-                        if "freshness_update_factor" in newConf:
-                            CustomRouter.freshnessUpdateFactor = newConf["freshness_update_factor"]
-                            print("setting freshnessUpdateFactor: " + str(newConf["freshness_update_factor"]))
-                        if "freshness_cut_off_value" in newConf:
-                            CustomRouter.freshnessCutOffValue = newConf["freshness_cut_off_value"]
-                            print("setting freshnessCutOffValue: " + str(newConf["freshness_cut_off_value"]))
-                        if "re_route_every_ticks" in newConf:
-                            CustomRouter.reRouteEveryTicks = newConf["re_route_every_ticks"]
-                            print("setting reRouteEveryTicks: " + str(newConf["re_route_every_ticks"]))
-                        if "total_car_counter" in newConf:
-                            CarRegistry.totalCarCounter = newConf["total_car_counter"]
-                            CarRegistry.applyCarCounter()
-                            print("setting totalCarCounter: " + str(newConf["total_car_counter"]))
-                        if "edge_average_influence" in newConf:
-                            RoutingEdge.edgeAverageInfluence = newConf["edge_average_influence"]
-                            print("setting edgeAverageInfluence: " + str(newConf["edge_average_influence"]))
+            # if (cls.tick % 10) == 0:
+            #     if Config.kafkaUpdates is False and Config.mqttUpdates is False:
+            #         # json mode
+            #         cls.applyFileConfig()
+            #     else:
+            #         # kafka mode
+            #         newConf = RTXConnector.checkForNewConfiguration()
+            #         if newConf is not None:
+            #             if "exploration_percentage" in newConf:
+            #                 CustomRouter.explorationPercentage = newConf["exploration_percentage"]
+            #                 print("setting victimsPercentage: " + str(newConf["exploration_percentage"]))
+            #             if "route_random_sigma" in newConf:
+            #                 CustomRouter.routeRandomSigma = newConf["route_random_sigma"]
+            #                 print("setting routeRandomSigma: " + str(newConf["route_random_sigma"]))
+            #             if "max_speed_and_length_factor" in newConf:
+            #                 CustomRouter.maxSpeedAndLengthFactor = newConf["max_speed_and_length_factor"]
+            #                 print("setting maxSpeedAndLengthFactor: " + str(newConf["max_speed_and_length_factor"]))
+            #             if "average_edge_duration_factor" in newConf:
+            #                 CustomRouter.averageEdgeDurationFactor = newConf["average_edge_duration_factor"]
+            #                 print("setting averageEdgeDurationFactor: " + str(newConf["average_edge_duration_factor"]))
+            #             if "freshness_update_factor" in newConf:
+            #                 CustomRouter.freshnessUpdateFactor = newConf["freshness_update_factor"]
+            #                 print("setting freshnessUpdateFactor: " + str(newConf["freshness_update_factor"]))
+            #             if "freshness_cut_off_value" in newConf:
+            #                 CustomRouter.freshnessCutOffValue = newConf["freshness_cut_off_value"]
+            #                 print("setting freshnessCutOffValue: " + str(newConf["freshness_cut_off_value"]))
+            #             if "re_route_every_ticks" in newConf:
+            #                 CustomRouter.reRouteEveryTicks = newConf["re_route_every_ticks"]
+            #                 print("setting reRouteEveryTicks: " + str(newConf["re_route_every_ticks"]))
+            #             if "total_car_counter" in newConf:
+            #                 CarRegistry.totalCarCounter = newConf["total_car_counter"]
+            #                 CarRegistry.applyCarCounter()
+            #                 print("setting totalCarCounter: " + str(newConf["total_car_counter"]))
+            #             if "edge_average_influence" in newConf:
+            #                 RoutingEdge.edgeAverageInfluence = newConf["edge_average_influence"]
+            #                 print("setting edgeAverageInfluence: " + str(newConf["edge_average_influence"]))
 
             # print status update if we are not running in parallel mode
-            if (cls.tick % 100) == 0 and Config.parallelMode is False:
-                print(str(Config.processID) + " -> Step:" + str(cls.tick) + " # Driving cars: " + str(
-                    traci.vehicle.getIDCount()) + "/" + str(
-                    CarRegistry.totalCarCounter) + " # avgTripDuration: " + str(
-                    CarRegistry.totalTripAverage) + "(" + str(
-                    CarRegistry.totalTrips) + ")" + " # avgTripOverhead: " + str(
-                    CarRegistry.totalTripOverheadAverage))
+            # if (cls.tick % 100) == 0 and Config.parallelMode is False:
+            #     print(str(Config.processID) + " -> Step:" + str(cls.tick) + " # Driving cars: " + str(
+            #         traci.vehicle.getIDCount()) + "/" + str(
+            #         CarRegistry.totalCarCounter) + " # avgTripDuration: " + str(
+            #         CarRegistry.totalTripAverage) + "(" + str(
+            #         CarRegistry.totalTrips) + ")" + " # avgTripOverhead: " + str(
+            #         CarRegistry.totalTripOverheadAverage))
 
                 # @depricated -> will be removed
                 # # if we are in paralllel mode we end the simulation after 10000 ticks with a result output

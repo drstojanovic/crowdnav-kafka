@@ -19,6 +19,7 @@ kafkaTopicNis = "traffic"
 
 # where we receive system changes
 kafkaCommandsTopic = "crowd-nav-commands"
+kafkaTlActionsTopic = "tl-actions"
 
 # True if we want to use the SUMO GUI (always of in parallel mode)
 sumoUseGUI = False  # False
