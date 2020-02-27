@@ -50,7 +50,7 @@ class Car:
         """ car arrived at its target, so we add some statistic data """
 
         # import here because python can not handle circular-dependencies
-        from app.entitiy.CarRegistry import CarRegistry
+        from app.entity.CarRegistry import CarRegistry
         # add a round to the car
         self.rounds += 1
         self.lastRerouteCounter = 0

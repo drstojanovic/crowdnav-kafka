@@ -1,6 +1,6 @@
 from app import Config
 
-from app.entitiy.Car import Car
+from app.entity.Car import Car
 
 
 class NullCar:

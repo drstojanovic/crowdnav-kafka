@@ -7,15 +7,12 @@ import traci.constants as tc
 from colorama import Fore
 
 from app import Config
-from app.entitiy.CarRegistry import CarRegistry
+from app.entity.CarRegistry import CarRegistry
 from app.logging import info
 from app.routing.CustomRouter import CustomRouter
 # get the current system time
-from app.routing.RoutingEdge import RoutingEdge
-from app.streaming import RTXConnector
 from app.streaming import RTXForword, RTXUpdater
 from app.tl_control.tl_controller import TLController
-
 
 current_milli_time = lambda: int(round(time.time() * 1000))
 
