@@ -1,4 +1,4 @@
-from app import Boot
+from app import boot
 import sys
 
 # this starts the simulation (int parameters are used for parallel mode)
@@ -13,4 +13,4 @@ if __name__ == "__main__":
         useGUI = True
     if processID is not None:
         # Starting the application
-        Boot.start(processID, parallelMode,useGUI)
+        boot.start(processID, parallelMode,useGUI)
