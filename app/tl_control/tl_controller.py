@@ -19,7 +19,7 @@ class TLController:
         self._perform_actions()
 
     def _perform_actions(self):
-        with open('/tmp/toilet.txt', 'a') as f:
+        with open('/tmp/tl_actions_log.txt', 'a') as f:
             for tl_id, actions in self._tls.items():
                 phase_index = traci.trafficlight.getPhase(tl_id)
                 if phase_index == self._tls[tl_id]['current_phase']:
