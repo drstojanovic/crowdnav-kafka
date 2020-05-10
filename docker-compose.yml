@@ -18,6 +18,10 @@ services:
     build: .
     container_name: crowdnav
     hostname: crowdnav
+    environment:
+      - KAFKA_ENDPOINT=kafka:9092
+      - SUMO_TOTAL_CARS=1000
+      - SUMO_RANDOM_SEED=13
     networks:
       - crowdnav_network
     depends_on:

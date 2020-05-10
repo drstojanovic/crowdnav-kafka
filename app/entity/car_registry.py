@@ -1,4 +1,4 @@
-from app import config
+from app.config import Config
 
 from app.entity.car import Car
 
@@ -29,12 +29,12 @@ class CarRegistry(object):
     @classmethod
     def apply_car_counter(cls):
         """ syncs the value of the carCounter to the SUMO simulation """
-        while len(CarRegistry.cars) < config.total_car_counter:
+        while len(CarRegistry.cars) < Config().sumo_total_cars:
             cls.car_index_counter += 1
             c = Car("car-" + str(CarRegistry.car_index_counter))
             cls.cars[c.id] = c
             c.add_to_simulation(0)
-        while len(CarRegistry.cars) > config.total_car_counter:
+        while len(CarRegistry.cars) > Config().sumo_total_cars:
             # to many cars -> remove cars
             (k, v) = CarRegistry.cars.popitem()
             v.remove()

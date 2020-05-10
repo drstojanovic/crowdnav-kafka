@@ -3,7 +3,7 @@ import random
 import traci
 import traci.constants as tc
 
-from app import config
+from app.config import Config
 from app.util import add_to_average
 from app.network.network import Network
 from app.routing.custom_router import CustomRouter
@@ -36,7 +36,7 @@ class Car:
         # add a round to the car
         self.rounds += 1
         self.last_reroute_counter = 0
-        if tick > config.initial_wait_ticks:  # as we ignore the first N ticks for this
+        if tick > 50:  # as we ignore the first N ticks for this
             # add a route to the global registry
             CarRegistry.total_trips += 1
             # add the duration for this route to the global tripAverage
@@ -62,7 +62,7 @@ class Car:
             msg = dict()
             msg["tick"] = tick
             msg["overhead"] = trip_overhead
-            Producer.publish(msg, config.kafka_topic_trips)
+            Producer.publish(msg, Config().kafka_topic_trips)
         # if car is still enabled, restart it in the simulation
         if self.disabled is False:
             self.add_to_simulation(tick)

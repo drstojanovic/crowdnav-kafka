@@ -1,6 +1,6 @@
 import sumolib
 
-from app import config
+from app.config import Config
 from app.routing.routing_edge import RoutingEdge
 
 
@@ -18,7 +18,7 @@ class Network(object):
     def load(cls):
         """ loads the network and applies the results to the Network static class """
         # parse the net using sumolib
-        parsed_network = sumolib.net.readNet(config.sumo_net)
+        parsed_network = sumolib.net.readNet(Config().sumo_map_file)
         # apply parsing to the network
         Network._apply_network(parsed_network)
 

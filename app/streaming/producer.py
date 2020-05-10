@@ -4,7 +4,7 @@ import sys
 from colorama import Fore
 from kafka import KafkaProducer
 
-from app import config
+from app.config import Config
 
 
 class Producer(object):
@@ -14,7 +14,7 @@ class Producer(object):
     def init(cls):
         print("Initiating producer...")
         try:
-            cls.producer = KafkaProducer(bootstrap_servers=config.kafka_host,
+            cls.producer = KafkaProducer(bootstrap_servers=Config().kafka_endpoint,
                                          value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                                          request_timeout_ms=5000)
         except RuntimeError:

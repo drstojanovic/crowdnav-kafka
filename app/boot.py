@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 
 sys.path.append(os.path.join(os.environ.get("SUMO_HOME"), "tools"))
 
@@ -11,24 +12,24 @@ from .streaming.consumer import Consumer
 from .streaming.producer import Producer
 from colorama import Fore
 from .sumo import sumo_connector, sumo_dependency
-from . import config
+from .config import Config
 import traci
 
 
 # uuid4()
-def start(process_id, parallel_mode, use_gui):
+def start():
     """ main entry point into the application """
-    config.process_id = process_id
-    config.parallel_mode = parallel_mode
-    config.use_gui = use_gui
-
     info('#####################################', Fore.CYAN)
     info('#      Starting CrowdNav v0.2       #', Fore.CYAN)
     info('#####################################', Fore.CYAN)
     info('# Configuration:', Fore.YELLOW)
-    info('# Kafka-Host   -> ' + config.kafka_host, Fore.YELLOW)
-    info('# Kafka-Topic1 -> ' + config.kafka_topic_trips, Fore.YELLOW)
-    info('# Kafka-Topic2 -> ' + config.kafka_topic_performance, Fore.YELLOW)
+    info('# Kafka-Host   -> ' + Config().kafka_endpoint, Fore.YELLOW)
+    info('# Kafka-Topic-Trips -> ' + Config().kafka_topic_trips, Fore.YELLOW)
+    info('# Kafka-Topic-Performance -> ' + Config().kafka_topic_performance, Fore.YELLOW)
+    info('# Kafka-Topic-TL-Status -> ' + Config().kafka_topic_tl_status, Fore.YELLOW)
+
+    if Config().sumo_random_seed != -1:
+        random.seed(Config().sumo_random_seed)
 
     # init sending updates to kafka and getting commands from there
     Consumer.init()

@@ -1,35 +1,32 @@
-#
-# Config file for SUMOS
-#
+import os
 
-# should use kafka for config changes (else it uses json file)
-kafka_updates = True
-# the kafka host we want to send our messages to
-kafka_host = "kafka:9092"
 
-# the topic we send the kafka messages to
-kafka_topic_trips = "crowd-nav-trips"
-kafka_topic_performance = "crowd-nav-performance"
-kafka_topic_traffic = "traffic"
+class Singleton(type):
+    _instances = {}
 
-# where we receive system changes
-kafka_tl_actions_topic = "tl-actions"
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
 
-# True if we want to use the SUMO GUI (always of in parallel mode)
-use_gui = False  # False
 
-# The network config (links to the net) we use for our simulation
-sumo_config = "./app/map/map.sumo.cfg"
+class Config(object):
+    __metaclass__ = Singleton
 
-# The network net we use for our simulation
-sumo_net = "./app/map/map.net.xml"
+    def __init__(self):
+        self.kafka_endpoint = os.getenv('KAFKA_ENDPOINT', '127.0.0.1:9092')
+        self.kafka_topic_trips = os.getenv('KAFKA_TOPIC_TRIPS', 'trips')
+        self.kafka_topic_performance = os.getenv('KAFKA_TOPIC_PERFORMANCE', 'performance')
+        self.kafka_topic_traffic = os.getenv('KAFKA_TOPIC_TRAFFIC', 'traffic')
+        self.kafka_topic_tl_status = os.getenv('KAFKA_TOPIC_TL_STATUS', 'tl-status')
+        self.kafka_topic_tl_lights = os.getenv('KAFKA_TOPIC_TL_LIGHTS', 'tl-lights')
 
-# Initial wait time before publishing overheads
-initial_wait_ticks = 50
+        self.sumo_config_file = os.getenv('SUMO_CONFIG_FILE', './app/map/map.sumo.cfg')
+        self.sumo_map_file = os.getenv('SUMO_MAP_FILE', './app/map/map.net.xml')
+        self.sumo_total_cars = int(os.getenv('SUMO_TOTAL_CARS', 1000))
+        self.sumo_random_seed = int(os.getenv('SUMO_RANDOM_SEED', -1))
 
-# the total number of cars we use in our simulation
-total_car_counter = 1000
+        self.multipliers_none = float(os.getenv('MULTIPLIERS_NONE', 0.00))
+        self.multipliers_few = float(os.getenv('MULTIPLIERS_FEW', 0.50))
+        self.multipliers_many = float(os.getenv('MULTIPLIERS_MANY', 1.30))
 
-# runtime dependent variable
-process_id = 0
-parallel_mode = False

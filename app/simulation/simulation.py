@@ -1,11 +1,14 @@
 import json
+import csv
+
+import timeit
 
 import sumolib
 import traci
 import traci.constants as tc
 from colorama import Fore
 
-from app import config
+from app.config import Config
 from app.entity.car_registry import CarRegistry
 from app.logging import info
 from app.streaming.consumer import Consumer
@@ -37,7 +40,7 @@ class Simulation(object):
     @classmethod
     def generate_map_files(cls):
         # Create a file with junction -> inc_lanes mapping
-        net = sumolib.net.readNet(config.sumo_net, withLatestPrograms=True)
+        net = sumolib.net.readNet(Config().sumo_map_file, withLatestPrograms=True)
         junction_ids = traci.junction.getIDList()
         junctions = {}
         for junction_id in junction_ids:
@@ -93,9 +96,14 @@ class Simulation(object):
 
         tl_controller = TLController()
 
+        # csv_file = open('/app/ROCKET.csv', 'w')
+        # csv_writer = csv.DictWriter(csv_file, [
+        #     'car_id', 'road_id', 'lane_id', 'speed',
+        #     'lon', 'lat', 'wait_time', 'timestamp'
+        # ])
+        # csv_writer.writeheader()
+
         while 1:
-            # Do one simulation step
-            cls.tick += 1
             traci.simulationStep()
 
             # Log tick duration to kafka
@@ -104,7 +112,7 @@ class Simulation(object):
             cls.lastTick = current_millis
             msg = dict()
             msg["duration"] = duration
-            Producer.publish(msg, config.kafka_topic_performance)
+            Producer.publish(msg, Config().kafka_topic_performance)
 
             current_secs = current_millis / 1000.0
 
@@ -131,7 +139,21 @@ class Simulation(object):
                     'wait_time':  wait_time,
                     'timestamp': current_secs
                 }
-                Producer.publish(message, config.kafka_topic_traffic)
+                Producer.publish(message, Config().kafka_topic_traffic)
 
-            new_tls_actions = Consumer.read_new_tls_actions()
+            new_tls_actions = Consumer.read_new_tl_status()
             tl_controller.update_tls(new_tls_actions)
+
+            # This is only used for visualization in the Vert.x app
+            main_intersection_tl_lights = traci.trafficlight.getRedYellowGreenState('gneJ6')
+            # Note: we are only sending for 'gneJ6' traffic light
+            # in order to not slow down the simulation but this could
+            # be done for all traffic lights
+            message = {
+                'tl_id': 'gneJ6',
+                'tl_lights': main_intersection_tl_lights
+            }
+            Producer.publish(message, Config().kafka_topic_tl_lights)
+
+            # Add one to simulation step count
+            cls.tick += 1
