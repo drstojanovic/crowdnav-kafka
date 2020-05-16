@@ -20,6 +20,7 @@ class Config(object):
         self.kafka_topic_traffic = os.getenv('KAFKA_TOPIC_TRAFFIC', 'traffic')
         self.kafka_topic_tl_status = os.getenv('KAFKA_TOPIC_TL_STATUS', 'tl-status')
         self.kafka_topic_tl_lights = os.getenv('KAFKA_TOPIC_TL_LIGHTS', 'tl-lights')
+        self.kafka_topic_tl_times = os.getenv('KAFKA_TOPIC_TL_TIMES', 'tl-times')
 
         self.sumo_config_file = os.getenv('SUMO_CONFIG_FILE', './app/map/map.sumo.cfg')
         self.sumo_map_file = os.getenv('SUMO_MAP_FILE', './app/map/map.net.xml')
